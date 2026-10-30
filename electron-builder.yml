@@ -1,0 +1,35 @@
+appId: com.screencapturepro.app
+productName: ScreenCapture Pro
+copyright: Copyright © 2026 ScreenCapture Pro
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - build/icon.png
+  - package.json
+  - "!**/*.map"
+
+# FFmpeg must live outside the asar archive so it can be executed.
+asarUnpack:
+  - node_modules/ffmpeg-static/**
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+  artifactName: ScreenCapture-Pro-Setup-${version}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: ScreenCapture Pro
+  uninstallDisplayName: ScreenCapture Pro
+  deleteAppDataOnUninstall: false
