@@ -21,6 +21,7 @@ const api: ScpApi = {
   getDisplays: () => ipcRenderer.invoke('capture:displays'),
   selectRegion: (displayId) => ipcRenderer.invoke('capture:select-region', displayId),
   prepareCapture: (sourceId, systemAudio) => ipcRenderer.invoke('capture:prepare', sourceId, systemAudio),
+  getSourceThumbnail: (sourceId) => ipcRenderer.invoke('capture:thumbnail', sourceId),
 
   checkDisk: () => ipcRenderer.invoke('disk:check'),
   getFfmpegStatus: () => ipcRenderer.invoke('ffmpeg:status'),
@@ -45,12 +46,16 @@ const api: ScpApi = {
   sendCommand: (command) => ipcRenderer.send('recorder:command', command),
   setToolbarCompact: (compact) => ipcRenderer.send('toolbar:compact', compact),
   submitRegion: (rect) => ipcRenderer.send('region:submit', rect),
+  reportCameraError: (message) => ipcRenderer.send('camera:error', message),
+  moveCamera: (x, y) => ipcRenderer.send('camera:move', x, y),
+  resizeCamera: (diameter, anchor) => ipcRenderer.send('camera:resize', diameter, anchor),
 
   onCommand: (cb) => subscribe('recorder:command', cb),
   onState: (cb) => subscribe('recorder:state', cb),
   onFinalizeProgress: (cb) => subscribe('recorder:finalize-progress', cb),
   onNotice: (cb) => subscribe('app:notice', cb),
   onSettings: (cb) => subscribe('settings:changed', cb),
+  onHistoryChanged: (cb) => subscribe('history:changed', cb),
 };
 
 contextBridge.exposeInMainWorld('scp', api);

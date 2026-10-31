@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { RecordingEntry } from '../../shared/types';
 import { log } from './logger';
 import { readJson, writeJson } from './store';
+import { deleteThumbnail, readThumbnail } from './thumbnails';
 
 const MAX_ENTRIES = 500;
 
@@ -20,7 +21,7 @@ export function listHistory(): RecordingEntry[] {
   return load().map((entry) => {
     try {
       const stat = fs.statSync(entry.filePath);
-      return { ...entry, exists: true, sizeBytes: stat.size };
+      return { ...entry, exists: true, sizeBytes: stat.size, thumbnail: readThumbnail(entry.id) };
     } catch {
       return { ...entry, exists: false };
     }
@@ -52,5 +53,6 @@ export async function removeHistory(id: unknown, deleteFile: boolean): Promise<R
     historyFile(),
     load().filter((e) => e.id !== id),
   );
+  if (entry) deleteThumbnail(entry.id);
   return listHistory();
 }

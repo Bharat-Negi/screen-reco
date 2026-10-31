@@ -7,6 +7,7 @@ import { buildTranscodeArgs, resolveFfmpeg, transcode } from './ffmpeg';
 import { addHistory } from './history';
 import { log } from './logger';
 import { getSettings } from './settings';
+import { createThumbnail } from './thumbnails';
 
 /**
  * A recording session streams MediaRecorder chunks straight to a temp file on disk, so a crash
@@ -217,6 +218,7 @@ async function produceFinalFile(
     sourceName: meta.sourceName,
     format: path.extname(finalPath).slice(1) as RecordingEntry['format'],
   };
+  if (entry.format === 'mp4') await createThumbnail(entry);
   addHistory(entry);
   notifySaved(entry);
   log.info(`Saved ${finalPath} (${size} bytes)`);

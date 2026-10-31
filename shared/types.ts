@@ -1,10 +1,14 @@
 // Types shared by the Electron main process, the preload script and the React renderer.
-// This file must stay type-only: the sandboxed preload cannot require runtime modules.
+// The sandboxed preload cannot require runtime modules, so it may only use `import type` from here.
 
 export type SourceKind = 'screen' | 'window' | 'monitor' | 'region';
 export type Quality = '720p' | '1080p' | 'native';
 export type FrameRate = 30 | 60;
 export type ThemeSetting = 'system' | 'light' | 'dark';
+
+/** Camera bubble diameter limits, in DIPs. */
+export const CAMERA_MIN_DIAMETER = 100;
+export const CAMERA_MAX_DIAMETER = 600;
 
 export interface AppSettings {
   outputFolder: string;
@@ -15,6 +19,12 @@ export interface AppSettings {
   systemAudio: boolean;
   microphone: boolean;
   microphoneDeviceId: string;
+  /** Floating webcam bubble that is captured together with the screen. */
+  camera: boolean;
+  cameraDeviceId: string;
+  /** Bubble diameter in DIPs (CAMERA_MIN_DIAMETER..CAMERA_MAX_DIAMETER). */
+  cameraDiameter: number;
+  cameraMirror: boolean;
   hideAppFromCapture: boolean;
   minimizeOnRecord: boolean;
   globalShortcuts: boolean;
@@ -83,6 +93,8 @@ export interface RecordingEntry {
   format: 'mp4' | 'webm' | 'mkv';
   /** Filled in by the main process when listing; false when the file was moved or deleted. */
   exists?: boolean;
+  /** Filled in by the main process when listing: JPEG data URL of a frame from the video. */
+  thumbnail?: string;
 }
 
 export type FinalizeResult =
@@ -140,6 +152,8 @@ export interface ScpApi {
   getDisplays(): Promise<DisplayInfo[]>;
   selectRegion(displayId: string): Promise<Rect | null>;
   prepareCapture(sourceId: string, systemAudio: boolean): Promise<void>;
+  /** A fresh still image of a screen or window, for the live preview. */
+  getSourceThumbnail(sourceId: string): Promise<string | null>;
 
   checkDisk(): Promise<DiskStatus>;
   getFfmpegStatus(): Promise<FfmpegStatus>;
@@ -164,10 +178,16 @@ export interface ScpApi {
   sendCommand(command: RecorderCommand): void;
   setToolbarCompact(compact: boolean): void;
   submitRegion(rect: Rect | null): void;
+  reportCameraError(message: string): void;
+  /** Live move/resize of the camera bubble window (not persisted; persist the size with updateSettings). */
+  moveCamera(x: number, y: number): void;
+  resizeCamera(diameter: number, anchor: 'top-left' | 'center'): void;
 
   onCommand(cb: (command: RecorderCommand) => void): () => void;
   onState(cb: (state: RecorderState) => void): () => void;
   onFinalizeProgress(cb: (progress: number) => void): () => void;
   onNotice(cb: (notice: AppNotice) => void): () => void;
   onSettings(cb: (settings: AppSettings) => void): () => void;
+  /** Fired when history changes in the background (e.g. thumbnails were generated). */
+  onHistoryChanged(cb: () => void): () => void;
 }

@@ -87,6 +87,18 @@ export const MicIcon = (p: IconProps) => (
     <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" />
   </Icon>
 );
+export const CameraIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="2.5" y="6" width="13" height="12" rx="2.5" />
+    <path d="m15.5 10.5 5-3v9l-5-3" />
+  </Icon>
+);
+export const CameraOffIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M15.5 13.5v2A2.5 2.5 0 0 1 13 18H5a2.5 2.5 0 0 1-2.5-2.5v-7A2.5 2.5 0 0 1 5 6h1.5M10 6h3a2.5 2.5 0 0 1 2.5 2.5v2l5-3v9" />
+    <path d="m3 3 18 18" />
+  </Icon>
+);
 export const SpeakerIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M4 9.5v5h3.5L12 19V5L7.5 9.5Z" />
@@ -116,6 +128,16 @@ export const CollapseIcon = (p: IconProps) => (
 export const ExpandIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" />
+  </Icon>
+);
+export const GripIcon = (p: IconProps) => (
+  <Icon {...p}>
+    {[8, 12, 16].map((y) => (
+      <g key={y}>
+        <circle cx="9.5" cy={y} r="1.3" fill="currentColor" stroke="none" />
+        <circle cx="14.5" cy={y} r="1.3" fill="currentColor" stroke="none" />
+      </g>
+    ))}
   </Icon>
 );
 export const CheckIcon = (p: IconProps) => (

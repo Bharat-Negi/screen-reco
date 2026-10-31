@@ -1,12 +1,18 @@
 import { app } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { AppSettings } from '../../shared/types';
+import { CAMERA_MAX_DIAMETER, CAMERA_MIN_DIAMETER, type AppSettings } from '../../shared/types';
 import { readJson, writeJson } from './store';
 
 const QUALITIES = ['720p', '1080p', 'native'] as const;
 const THEMES = ['system', 'light', 'dark'] as const;
 const SOURCE_KINDS = ['screen', 'window', 'monitor', 'region'] as const;
+/** Older versions stored a size preset; map it to a diameter. */
+const LEGACY_CAMERA_SIZES: Record<string, number> = { small: 160, medium: 220, large: 300 };
+
+export function clampCameraDiameter(d: number): number {
+  return Math.round(Math.min(CAMERA_MAX_DIAMETER, Math.max(CAMERA_MIN_DIAMETER, d)));
+}
 
 let cache: AppSettings | null = null;
 
@@ -28,6 +34,10 @@ function defaults(): AppSettings {
     systemAudio: true,
     microphone: false,
     microphoneDeviceId: 'default',
+    camera: false,
+    cameraDeviceId: 'default',
+    cameraDiameter: 220,
+    cameraMirror: true,
     hideAppFromCapture: true,
     minimizeOnRecord: true,
     globalShortcuts: true,
@@ -65,10 +75,21 @@ function sanitize(base: AppSettings, patch: Record<string, unknown>): AppSetting
   if (typeof patch.microphoneDeviceId === 'string' && patch.microphoneDeviceId.length < 512) {
     next.microphoneDeviceId = patch.microphoneDeviceId;
   }
+  if (typeof patch.cameraDeviceId === 'string' && patch.cameraDeviceId.length < 512) {
+    next.cameraDeviceId = patch.cameraDeviceId;
+  }
+  if (typeof patch.cameraSize === 'string' && LEGACY_CAMERA_SIZES[patch.cameraSize]) {
+    next.cameraDiameter = LEGACY_CAMERA_SIZES[patch.cameraSize];
+  }
+  if (typeof patch.cameraDiameter === 'number' && Number.isFinite(patch.cameraDiameter)) {
+    next.cameraDiameter = clampCameraDiameter(patch.cameraDiameter);
+  }
   if (isUsableFfmpegPath(patch.ffmpegPath)) next.ffmpegPath = patch.ffmpegPath;
   for (const key of [
     'systemAudio',
     'microphone',
+    'camera',
+    'cameraMirror',
     'hideAppFromCapture',
     'minimizeOnRecord',
     'globalShortcuts',

@@ -2,6 +2,7 @@ import { app, BrowserWindow, nativeTheme, screen, type Rectangle } from 'electro
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Rect } from '../shared/types';
+import { clampCameraDiameter } from './services/settings';
 import { log } from './services/logger';
 
 const DEV_URL = process.env.VITE_DEV_SERVER_URL?.replace(/\/$/, '');
@@ -9,13 +10,23 @@ const INDEX_HTML = path.join(__dirname, '../../dist/renderer/index.html');
 const PRELOAD = path.join(__dirname, 'preload.js');
 const ICON = path.join(app.getAppPath(), 'build', 'icon.png');
 
-const TOOLBAR_SIZE = { width: 340, height: 56 };
-const TOOLBAR_COMPACT = { width: 150, height: 44 };
+// Includes an 8px transparent margin around the pill for its shadow (see .tb-shell).
+const TOOLBAR_SIZE = { width: 392, height: 72 };
+const TOOLBAR_COMPACT = { width: 172, height: 60 };
 
-export type Route = 'main' | 'toolbar' | 'region';
+/** Margin around the camera bubble inside its window, for the drop shadow and resize handle. */
+const CAMERA_MARGIN = 8;
+
+export type Route = 'main' | 'toolbar' | 'region' | 'camera';
 
 let mainWindow: BrowserWindow | null = null;
 let toolbarWindow: BrowserWindow | null = null;
+let cameraWindow: BrowserWindow | null = null;
+/**
+ * Intended camera window side (DIPs). Re-reading the size from the window is not safe: at fractional
+ * display scaling Windows rounds it, and the error accumulates on every move.
+ */
+let cameraSide = 0;
 let regionWindow: BrowserWindow | null = null;
 let regionResolver: ((rect: Rect | null) => void) | null = null;
 
@@ -54,7 +65,8 @@ function load(win: BrowserWindow, route: Route): void {
 
 export function titleBarColors(): Electron.TitleBarOverlay {
   const dark = nativeTheme.shouldUseDarkColors;
-  return { color: dark ? '#202024' : '#f3f3f5', symbolColor: dark ? '#f2f2f2' : '#1a1a1a', height: 44 };
+  // Matches --bg in styles.css.
+  return { color: dark ? '#1d1d21' : '#f0f0f3', symbolColor: dark ? '#f2f2f2' : '#1a1a1a', height: 44 };
 }
 
 export function getMainWindow(): BrowserWindow | null {
@@ -75,7 +87,7 @@ export function createMainWindow(): BrowserWindow {
     show: false,
     title: 'ScreenCapture Pro',
     icon: ICON,
-    backgroundColor: dark ? '#202024' : '#f3f3f5',
+    backgroundColor: dark ? '#1d1d21' : '#f0f0f3',
     titleBarStyle: 'hidden',
     titleBarOverlay: titleBarColors(),
     webPreferences: secureWebPreferences({
@@ -84,7 +96,15 @@ export function createMainWindow(): BrowserWindow {
     }),
   });
   harden(mainWindow);
-  mainWindow.once('ready-to-show', () => mainWindow?.show());
+  // 'ready-to-show' is occasionally never emitted, which would leave the app running with no
+  // visible window. Fall back to showing after the page loads, and after a hard timeout.
+  const win = mainWindow;
+  const reveal = () => {
+    if (!win.isDestroyed() && !win.isVisible()) win.show();
+  };
+  win.once('ready-to-show', reveal);
+  win.webContents.once('did-finish-load', () => setTimeout(reveal, 1500));
+  setTimeout(reveal, 8000);
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -102,12 +122,11 @@ export function showToolbar(hideFromCapture: boolean): void {
   toolbarWindow = new BrowserWindow({
     ...TOOLBAR_SIZE,
     x: Math.round(area.x + (area.width - TOOLBAR_SIZE.width) / 2),
-    y: area.y + 16,
+    y: area.y + 10,
     frame: false,
-    // Opaque window; Windows 11 rounds the corners of frameless windows itself.
-    transparent: false,
-    backgroundColor: '#1c1c20',
-    roundedCorners: true,
+    // Transparent so the pill shape and its shadow look the same on Windows 10 and 11.
+    transparent: true,
+    hasShadow: false,
     resizable: false,
     maximizable: false,
     minimizable: false,
@@ -208,6 +227,81 @@ export function submitRegion(rect: unknown): void {
   const valid =
     r && [r.x, r.y, r.width, r.height].every((n) => typeof n === 'number' && Number.isFinite(n)) && r.width >= 16 && r.height >= 16;
   regionResolver(valid ? { x: r.x, y: r.y, width: r.width, height: r.height } : null);
+}
+
+export function getCameraWindow(): BrowserWindow | null {
+  return cameraWindow && !cameraWindow.isDestroyed() ? cameraWindow : null;
+}
+
+/**
+ * Floating webcam bubble. Unlike the other app windows it is deliberately *not* excluded from
+ * capture: it is recorded as part of the screen, wherever the user drags it.
+ */
+export function showCamera(diameter: number): void {
+  const existing = getCameraWindow();
+  if (existing) {
+    resizeCamera(diameter, 'center');
+    if (!existing.isVisible()) existing.showInactive();
+    return;
+  }
+  const area = screen.getPrimaryDisplay().workArea;
+  const side = Math.min(clampCameraDiameter(diameter), area.height - CAMERA_MARGIN * 2) + CAMERA_MARGIN * 2;
+  cameraSide = side;
+  cameraWindow = new BrowserWindow({
+    width: side,
+    height: side,
+    x: area.x + area.width - side - 24,
+    y: area.y + area.height - side - 24,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    hasShadow: false,
+    show: false,
+    title: 'ScreenCapture Pro — Camera',
+    icon: ICON,
+    webPreferences: secureWebPreferences({ backgroundThrottling: false }),
+  });
+  harden(cameraWindow);
+  cameraWindow.setAlwaysOnTop(true, 'floating');
+  cameraWindow.setVisibleOnAllWorkspaces(true);
+  cameraWindow.once('ready-to-show', () => cameraWindow?.showInactive());
+  cameraWindow.on('closed', () => {
+    cameraWindow = null;
+  });
+  load(cameraWindow, 'camera');
+}
+
+/** Resizes the bubble, keeping either its top-left corner (drag handle) or its centre (wheel, buttons, slider) fixed. */
+export function resizeCamera(diameter: unknown, anchor: unknown): void {
+  const win = getCameraWindow();
+  if (!win || typeof diameter !== 'number' || !Number.isFinite(diameter)) return;
+  const b = win.getBounds();
+  const area = screen.getDisplayMatching(b).workArea;
+  const side = Math.min(clampCameraDiameter(diameter), area.height - CAMERA_MARGIN * 2) + CAMERA_MARGIN * 2;
+  if (side === cameraSide) return;
+  let x = anchor === 'top-left' ? b.x : Math.round(b.x + (cameraSide - side) / 2);
+  let y = anchor === 'top-left' ? b.y : Math.round(b.y + (cameraSide - side) / 2);
+  // Keep the whole bubble on screen when it grows.
+  x = Math.max(area.x, Math.min(x, area.x + area.width - side));
+  y = Math.max(area.y, Math.min(y, area.y + area.height - side));
+  cameraSide = side;
+  win.setBounds({ x, y, width: side, height: side });
+}
+
+export function moveCamera(x: unknown, y: unknown): void {
+  const win = getCameraWindow();
+  if (!win || typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x) || !Number.isFinite(y)) return;
+  win.setBounds({ x: Math.round(x), y: Math.round(y), width: cameraSide, height: cameraSide });
+}
+
+export function hideCamera(): void {
+  const win = getCameraWindow();
+  if (win) win.close();
 }
 
 export function broadcast(channel: string, ...args: unknown[]): void {

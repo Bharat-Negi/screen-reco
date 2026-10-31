@@ -1,15 +1,19 @@
 import { app, BrowserWindow, dialog, globalShortcut, nativeTheme, session } from 'electron';
 import type { AppNotice, AppSettings, RecorderCommand, RecorderState } from '../shared/types';
+import { runCameraSelfTest } from './cameraSelfTest';
 import { registerIpc } from './ipc';
 import { log } from './services/logger';
 import { closeAllSessions, hasActiveSessions } from './services/sessions';
 import { getSettings } from './services/settings';
 import {
   createMainWindow,
+  getCameraWindow,
   getMainWindow,
   getToolbarWindow,
+  hideCamera,
   hideToolbar,
   isTrustedUrl,
+  showCamera,
   showToolbar,
   titleBarColors,
 } from './windows';
@@ -97,10 +101,17 @@ function applyTheme(settings: AppSettings): void {
   nativeTheme.themeSource = settings.theme;
 }
 
+function applyCamera(settings: AppSettings): void {
+  if (settings.camera) showCamera(settings.cameraDiameter);
+  else hideCamera();
+}
+
 function onSettingsChanged(settings: AppSettings): void {
   applyTheme(settings);
   applyShortcuts(settings);
+  applyCamera(settings);
   getMainWindow()?.webContents.send('settings:changed', settings);
+  getCameraWindow()?.webContents.send('settings:changed', settings);
 }
 
 function configureSession(): void {
@@ -158,6 +169,9 @@ function setupMainWindow(): void {
       });
   });
 
+  // The camera bubble is a separate window; closing the main window must still quit the app.
+  win.on('closed', () => app.quit());
+
   win.webContents.on('render-process-gone', async (_event, details) => {
     log.error('Main renderer process gone', details);
     // Close capture files so they can be recovered on reload.
@@ -201,10 +215,14 @@ if (!gotLock) {
   app.setAppUserModelId('com.screencapturepro.app');
 
   app.on('second-instance', () => {
+    // Launching the app again (desktop icon, Start menu) brings the existing window to the front.
     const main = getMainWindow();
     if (main) {
+      if (!main.isVisible()) main.show();
       if (main.isMinimized()) main.restore();
       main.focus();
+    } else {
+      setupMainWindow();
     }
   });
 
@@ -222,10 +240,13 @@ if (!gotLock) {
       },
       onSettingsChanged,
       getShortcutStatus: () => shortcutStatus,
+      onCameraError: (message) => sendNotice({ level: 'warning', message }),
     });
     setupMainWindow();
     applyShortcuts(settings);
+    applyCamera(settings);
     if (process.env.SCP_SELFTEST === '1') runSelfTest();
+    if (process.env.SCP_SELFTEST === 'camera') void runCameraSelfTest(getCameraWindow);
   });
 
   app.on('before-quit', (event) => {

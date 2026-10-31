@@ -5,13 +5,17 @@ import { checkRecordingDisks } from './services/disk';
 import { resolveFfmpeg } from './services/ffmpeg';
 import { getHistoryEntry, listHistory, removeHistory } from './services/history';
 import { getLogDir, log } from './services/logger';
+import { backfillThumbnails } from './services/thumbnails';
 import * as sessions from './services/sessions';
 import { getSettings, isUsableFolder, updateSettings } from './services/settings';
 import {
   broadcast,
+  getCameraWindow,
   getMainWindow,
   getToolbarWindow,
   isTrustedUrl,
+  moveCamera,
+  resizeCamera,
   selectRegion,
   setToolbarCompact,
   submitRegion,
@@ -24,6 +28,7 @@ export interface IpcContext {
   setPendingCapture(capture: { id: string; name: string; systemAudio: boolean }): void;
   onSettingsChanged(settings: AppSettings): void;
   getShortcutStatus(): { global: boolean; failed: string[] };
+  onCameraError(message: string): void;
 }
 
 const COMMANDS: RecorderCommand[] = ['start', 'stop', 'pause', 'resume', 'toggle-pause'];
@@ -61,7 +66,7 @@ function on(channel: string, fn: (...args: any[]) => void): void {
 
 function ownWindowSourceIds(): Set<string> {
   const ids = new Set<string>();
-  for (const win of [getMainWindow(), getToolbarWindow()]) {
+  for (const win of [getMainWindow(), getToolbarWindow(), getCameraWindow()]) {
     if (win) ids.add(win.getMediaSourceId());
   }
   return ids;
@@ -174,6 +179,20 @@ export function registerIpc(ctx: IpcContext): void {
     ctx.setPendingCapture({ id: source.id, name: source.name, systemAudio: systemAudio === true });
   });
 
+  handle('capture:thumbnail', async (sourceId: unknown) => {
+    if (typeof sourceId !== 'string') return null;
+    const type = sourceId.startsWith('window:') ? 'window' : 'screen';
+    const sources = await desktopCapturer.getSources({
+      types: [type],
+      thumbnailSize: { width: 960, height: 540 },
+      fetchWindowIcons: false,
+    });
+    const source = sources.find((s) => s.id === sourceId);
+    return source && !source.thumbnail.isEmpty()
+      ? `data:image/jpeg;base64,${source.thumbnail.toJPEG(82).toString('base64')}`
+      : null;
+  });
+
   handle('disk:check', () => checkRecordingDisks(getSettings().outputFolder, sessions.tempDir()));
   handle('ffmpeg:status', () => resolveFfmpeg(getSettings().ffmpegPath, true));
   handle('shortcuts:status', () => ctx.getShortcutStatus());
@@ -189,7 +208,11 @@ export function registerIpc(ctx: IpcContext): void {
   handle('recovery:recover', (sessionId: unknown) => sessions.recoverSession(sessionId, sendProgress));
   handle('recovery:discard', (sessionId: unknown) => sessions.discardRecoverable(sessionId));
 
-  handle('history:list', () => listHistory());
+  handle('history:list', () => {
+    const entries = listHistory();
+    void backfillThumbnails(entries, () => getMainWindow()?.webContents.send('history:changed'));
+    return entries;
+  });
   handle('history:remove', (id: unknown, deleteFile: unknown) => removeHistory(id, deleteFile === true));
   handle('history:play', async (id: unknown) => {
     const entry = getHistoryEntry(id);
@@ -219,4 +242,9 @@ export function registerIpc(ctx: IpcContext): void {
   });
   on('toolbar:compact', (compact: unknown) => setToolbarCompact(compact === true));
   on('region:submit', (rect: unknown) => submitRegion(rect));
+  on('camera:move', (x: unknown, y: unknown) => moveCamera(x, y));
+  on('camera:resize', (diameter: unknown, anchor: unknown) => resizeCamera(diameter, anchor));
+  on('camera:error', (message: unknown) => {
+    if (typeof message === 'string') ctx.onCameraError(message.slice(0, 500));
+  });
 }

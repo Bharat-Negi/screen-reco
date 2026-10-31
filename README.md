@@ -4,8 +4,11 @@ A screen recorder for Windows 10 and Windows 11, built with Electron, React, Typ
 
 - Record the **entire screen**, a single **application window**, a **selected monitor**, or a **custom region**
 - **System audio** and **microphone**, mixed into one synchronized track
+- **Webcam bubble**: a round camera overlay that is recorded with the screen. Drag it to move it. Resize it with the mouse wheel, the corner handle, the −/+ buttons, or the size slider (100–600 px). It also has a mirror option.
 - **720p / 1080p / native** quality at **30 or 60 FPS**, saved as **MP4 (H.264 + AAC)**
 - **Pause and resume** in a single file, live **HH:MM:SS** timer, always-on-top **recording toolbar**
+- **Live preview** of the selected screen, window, monitor or region before you record
+- **Recordings gallery** with video thumbnails, search, Play / Show in folder / Delete
 - The app's own windows are **hidden from the recording**
 - **Recordings history** with Play / Open folder, **crash recovery**, **disk-space protection**
 - Light/dark themes, keyboard shortcuts, notifications. Recordings never leave your PC.
@@ -88,6 +91,9 @@ Default output folder: `%USERPROFILE%\Videos\ScreenCapture Pro`. Change it in th
 | Problem | Fix |
 | --- | --- |
 | **Running `electron`/`npm start` opens no window** | Some terminals (notably inside VS Code extensions) set `ELECTRON_RUN_AS_NODE=1`. The npm scripts already clear it through `scripts/run-electron.mjs`. If you launch Electron another way, run `Remove-Item Env:ELECTRON_RUN_AS_NODE` first. |
+| **Camera bubble shows "Camera blocked"** | **Windows Settings → Privacy & security → Camera**: turn on *Camera access* and *Let desktop apps access your camera*. |
+| **Camera bubble shows "Camera in use"** | Another app (Teams, Zoom, the Camera app) is using the webcam. Close it, then turn the camera off and on in the Camera card. |
+| **Camera bubble not in the video** | In **Application Window** mode only that window is recorded. Use Entire Screen, Selected Monitor or Custom Region. In region mode, drag the bubble inside the selected area. |
 | **No system audio in the video** | Make sure something is actually playing, and that the default output device in **Settings → System → Sound** is the one you listen on. System audio is captured from the default playback device (loopback). |
 | **Microphone not recorded / "Microphone access is blocked"** | **Windows Settings → Privacy & security → Microphone**: turn on *Microphone access* and *Let desktop apps access your microphone*. Then pick the device again in the Audio card. Recording continues without the mic if it fails. |
 | **Microphone list shows "Microphone 1, 2…"** | Device names appear after access is granted once. Toggle the microphone off and on. |
@@ -160,5 +166,6 @@ electron-builder.yml   installer configuration
 - **"Entire Screen" records the primary display.** Chromium captures one display at a time, so recording several monitors in one video isn't supported. Use **Selected Monitor** to choose another display.
 - **System audio is the whole PC's audio** (Windows loopback), even when recording a single window. Capturing one app's audio isn't available through Electron.
 - **Encoding happens when you stop.** A long recording takes some time to save, with a progress bar in the app and the toolbar. Expect roughly 10–40% of the recording's length on a typical PC with the `veryfast` preset. Raw footage is safe on disk the whole time.
+- The **camera bubble** is captured as part of the screen, so it isn't included in **Application Window** recordings, and it covers whatever is under it on screen.
 - The **custom region** is fixed once recording starts, and must stay on a single display.
 - The **toolbar has square corners on Windows 10.** Windows 11 rounds them.

@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react';
-import type { AppSettings, FrameRate, Quality } from '../../shared/types';
-import { FolderIcon, MicIcon, SpeakerIcon } from './icons';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { CAMERA_MAX_DIAMETER, CAMERA_MIN_DIAMETER, type AppSettings, type FrameRate, type Quality } from '../../shared/types';
+import { api } from '../api';
+import { CameraIcon, FolderIcon, MicIcon, SpeakerIcon, WarningIcon } from './icons';
 
 export function Toggle({
   id,
@@ -124,6 +125,112 @@ export function AudioOptions({ settings, microphones, disabled, onChange }: Audi
             ))}
           </select>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Resizes the bubble live while dragging and saves the size once the slider settles. */
+function CameraSizeSlider({ diameter, onCommit }: { diameter: number; onCommit(value: number): void }) {
+  const [value, setValue] = useState(diameter);
+  const commitTimer = useRef<number | null>(null);
+
+  // Follow size changes made on the bubble itself (wheel, handle, buttons).
+  useEffect(() => setValue(diameter), [diameter]);
+  useEffect(() => () => {
+    if (commitTimer.current) window.clearTimeout(commitTimer.current);
+  }, []);
+
+  const change = (next: number) => {
+    setValue(next);
+    api.resizeCamera(next, 'center');
+    if (commitTimer.current) window.clearTimeout(commitTimer.current);
+    commitTimer.current = window.setTimeout(() => onCommit(next), 300);
+  };
+
+  return (
+    <div className="field">
+      <label className="field-label" htmlFor="opt-camera-size">
+        Bubble size <span className="camera-size-value">{value} px</span>
+      </label>
+      <input
+        id="opt-camera-size"
+        className="range"
+        type="range"
+        min={CAMERA_MIN_DIAMETER}
+        max={CAMERA_MAX_DIAMETER}
+        step={10}
+        value={value}
+        onChange={(e) => change(Number(e.target.value))}
+      />
+      <span className="muted small">Tip: scroll over the camera bubble, or drag its corner handle, to resize it.</span>
+    </div>
+  );
+}
+
+interface CameraProps {
+  settings: AppSettings;
+  cameras: MediaDeviceInfo[];
+  onChange(patch: Partial<AppSettings>): void;
+}
+
+export function CameraOptions({ settings, cameras, onChange }: CameraProps) {
+  return (
+    <div className="camera-options">
+      <div className="stack-sm">
+        <Toggle
+          id="opt-camera"
+          icon={<CameraIcon size={18} />}
+          label="Show camera"
+          description="A round webcam bubble recorded with your screen. Drag it anywhere."
+          checked={settings.camera}
+          onChange={(camera) => onChange({ camera })}
+        />
+        {settings.camera && (
+          <div className="field">
+            <label className="field-label" htmlFor="opt-camera-device">
+              Camera device
+            </label>
+            <select
+              id="opt-camera-device"
+              className="input"
+              value={cameras.some((c) => c.deviceId === settings.cameraDeviceId) ? settings.cameraDeviceId : 'default'}
+              disabled={cameras.length === 0}
+              onChange={(e) => onChange({ cameraDeviceId: e.target.value })}
+            >
+              {cameras.length === 0 && <option value="default">No camera detected</option>}
+              {cameras.length > 0 && !cameras.some((c) => c.deviceId === settings.cameraDeviceId) && (
+                <option value="default">Default camera</option>
+              )}
+              {cameras.map((c, i) => (
+                <option key={c.deviceId || i} value={c.deviceId}>
+                  {c.label || `Camera ${i + 1}`}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+      {settings.camera && (
+        <div className="stack-sm">
+          <CameraSizeSlider diameter={settings.cameraDiameter} onCommit={(cameraDiameter) => onChange({ cameraDiameter })} />
+          <Toggle
+            id="opt-camera-mirror"
+            label="Mirror image"
+            description="Show yourself like in a mirror"
+            checked={settings.cameraMirror}
+            onChange={(cameraMirror) => onChange({ cameraMirror })}
+          />
+        </div>
+      )}
+      {settings.camera && settings.sourceKind === 'window' && (
+        <p className="warning-text camera-note">
+          <WarningIcon size={16} /> In Application Window mode only that window is recorded, so the camera bubble won't appear. Choose Entire
+          Screen, Selected Monitor or Custom Region to include it.
+        </p>
+      )}
+      {settings.camera && settings.sourceKind === 'region' && (
+        <p className="muted small camera-note">Drag the camera bubble inside the selected area to include it in the recording.</p>
       )}
     </div>
   );
